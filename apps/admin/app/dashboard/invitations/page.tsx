@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Table, Column } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
 import { Card } from "@/components/ui/Card";
-import { Upload, Download, Search, Plus, QrCode, FileSpreadsheet } from "lucide-react";
+import { Upload, Download, Search, Plus, FileSpreadsheet } from "lucide-react";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { generateQRToken, generateQRCode } from "@/lib/qr-utils";
@@ -18,7 +18,7 @@ export default function InvitationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [, setCsvFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<CSVRow[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState("");
@@ -59,8 +59,8 @@ export default function InvitationsPage() {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
-        const parsed = results.data.map((row: any) => ({
+      complete: (results: Papa.ParseResult<Record<string, string>>) => {
+        const parsed: CSVRow[] = results.data.map((row: Record<string, string>) => ({
           name: row.Name || row.name || "",
           phone: row.Phone || row.phone || "",
           groupSize: parseInt(
@@ -69,7 +69,7 @@ export default function InvitationsPage() {
         }));
         setPreviewData(parsed);
       },
-      error: (error) => {
+      error: (error: Error) => {
         console.error("CSV parse error:", error);
         alert("Failed to parse CSV file");
       },
@@ -115,8 +115,8 @@ export default function InvitationsPage() {
       Papa.parse(csvText, {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => {
-          const parsed = results.data.map((row: any) => ({
+        complete: (results: Papa.ParseResult<Record<string, string>>) => {
+          const parsed: CSVRow[] = results.data.map((row: Record<string, string>) => ({
             name: row.Name || row.name || "",
             phone: row.Phone || row.phone || "",
             groupSize: parseInt(
@@ -126,14 +126,15 @@ export default function InvitationsPage() {
           setPreviewData(parsed);
           setGoogleSheetsUrl("");
         },
-        error: (error) => {
+        error: (error: Error) => {
           console.error("CSV parse error:", error);
           alert("Failed to parse Google Sheets data");
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error("Google Sheets import error:", error);
-      alert(error.message || "Failed to import from Google Sheets");
+      const errorMessage = error instanceof Error ? error.message : "Failed to import from Google Sheets";
+      alert(errorMessage);
     } finally {
       setIsLoadingSheets(false);
     }
@@ -178,9 +179,10 @@ export default function InvitationsPage() {
       setCsvFile(null);
       setPreviewData([]);
       alert(`Successfully imported ${previewData.length} invitations!`);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error uploading invitations:", error);
-      alert(error.message || "Failed to upload invitations");
+      const errorMessage = error instanceof Error ? error.message : "Failed to upload invitations";
+      alert(errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -207,9 +209,10 @@ export default function InvitationsPage() {
       await fetchInvitations();
       setIsAddModalOpen(false);
       setNewInvitation({ guest_name: "", guest_phone: "", group_size: 1 });
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding invitation:", error);
-      alert(error.message || "Failed to add invitation");
+      const errorMessage = error instanceof Error ? error.message : "Failed to add invitation";
+      alert(errorMessage);
     } finally {
       setIsProcessing(false);
     }
