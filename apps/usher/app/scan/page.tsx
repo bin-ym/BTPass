@@ -233,8 +233,6 @@ export default function ScanPage() {
   async function handleConfirmScan() {
     if (!pendingScanLog || !lastScan) return;
 
-    setShowScanResultModal(false);
-
     try {
       if (isOnline) {
         // Try to save online
@@ -275,12 +273,21 @@ export default function ScanPage() {
 
       // Reload history
       await loadScanHistory();
-      setPendingScanLog(null);
-      setLastScan(null);
     } catch (error) {
       console.error("Error confirming scan:", error);
       alert("Failed to save scan. Please try again.");
+    } finally {
+      // Always reset states and close modal
+      setShowScanResultModal(false);
+      setPendingScanLog(null);
+      setLastScan(null);
     }
+  }
+
+  function handleCloseScanResultModal() {
+    setShowScanResultModal(false);
+    setPendingScanLog(null);
+    setLastScan(null);
   }
 
   async function syncOfflineScans() {
@@ -517,10 +524,15 @@ export default function ScanPage() {
       </div>
 
       {/* QR Scanner Modal */}
-      {showScanner && (
+      {showScanner && !showScanResultModal && (
         <QRScanner
           onScanSuccess={handleScanSuccess}
-          onClose={() => setShowScanner(false)}
+          onClose={() => {
+            setShowScanner(false);
+            // Reset any pending states when closing scanner
+            setPendingScanLog(null);
+            setLastScan(null);
+          }}
         />
       )}
 
@@ -572,11 +584,7 @@ export default function ScanPage() {
 
             <div className="flex gap-3">
               <Button
-                onClick={() => {
-                  setShowScanResultModal(false);
-                  setLastScan(null);
-                  setPendingScanLog(null);
-                }}
+                onClick={handleCloseScanResultModal}
                 variant="outline"
                 className="flex-1"
               >
