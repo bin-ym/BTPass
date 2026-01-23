@@ -538,8 +538,16 @@ export default function ScanPage() {
 
       {/* Scan Result Modal */}
       {showScanResultModal && lastScan && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6 bg-white dark:bg-zinc-900">
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={(e) => {
+            // Close modal when clicking backdrop
+            if (e.target === e.currentTarget) {
+              handleCloseScanResultModal();
+            }
+          }}
+        >
+          <Card className="w-full max-w-md p-6 bg-white dark:bg-zinc-900 relative z-50">
             <div className="text-center mb-6">
               {lastScan.result === "ADMIT" ? (
                 <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
@@ -584,7 +592,12 @@ export default function ScanPage() {
 
             <div className="flex gap-3">
               <Button
-                onClick={handleCloseScanResultModal}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCloseScanResultModal();
+                }}
                 variant="outline"
                 className="flex-1"
               >
@@ -592,7 +605,12 @@ export default function ScanPage() {
               </Button>
               {lastScan.result === "ADMIT" && (
                 <Button
-                  onClick={handleConfirmScan}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleConfirmScan();
+                  }}
                   className="flex-1 bg-black dark:bg-white text-white dark:text-black"
                 >
                   OK
