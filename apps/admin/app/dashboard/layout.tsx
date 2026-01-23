@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   X,
+  User,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -33,6 +34,7 @@ export default function DashboardLayout({
     { href: "/dashboard/ushers", label: "Ushers", icon: Users },
     { href: "/dashboard/invitations", label: "Invitations", icon: Mail },
     { href: "/dashboard/logs", label: "Scan Logs", icon: ClipboardList },
+    { href: "/dashboard/profile", label: "Profile", icon: User },
   ];
 
   return (

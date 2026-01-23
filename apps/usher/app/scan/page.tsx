@@ -44,6 +44,8 @@ export default function ScanPage() {
     message: string;
     scanned_at: string;
   } | null>(null);
+  const [showScanResultModal, setShowScanResultModal] = useState(false);
+  const [pendingScanLog, setPendingScanLog] = useState<OfflineScanLog | null>(null);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -117,10 +119,14 @@ export default function ScanPage() {
 
   async function handleScanSuccess(decodedText: string) {
     try {
+      // Close scanner first
+      setShowScanner(false);
+
       // Decrypt QR token
       const invitationData = decryptInvitationData(decodedText);
 
       if (!invitationData) {
+        // Show error modal
         setLastScan({
           guest_name: "Unknown",
           guest_phone: null,
@@ -130,6 +136,7 @@ export default function ScanPage() {
           message: "Invalid QR code. Please scan a valid invitation QR code.",
           scanned_at: new Date().toISOString(),
         });
+        setShowScanResultModal(true);
         return;
       }
 
@@ -141,6 +148,7 @@ export default function ScanPage() {
         .single();
 
       if (invError || !invitation) {
+        // Show error modal
         setLastScan({
           guest_name: invitationData.name || "Unknown",
           guest_phone: null,
@@ -150,38 +158,32 @@ export default function ScanPage() {
           message: "Invitation not found in database.",
           scanned_at: new Date().toISOString(),
         });
+        setShowScanResultModal(true);
         return;
       }
 
       // Type assertion for invitation
       const invitationDataTyped = invitation as Invitation;
 
-      // Check if already used
-      if (invitationDataTyped.status === "USED") {
-        const shouldAdmit = confirm(
-          `This invitation was already used. Do you want to admit ${invitationDataTyped.guest_name} again?`
-        );
-        if (!shouldAdmit) return;
+      if (!currentUser) {
+        setLastScan({
+          guest_name: invitationDataTyped.guest_name,
+          guest_phone: invitationDataTyped.guest_phone,
+          group_size: invitationDataTyped.group_size,
+          admit_count: 0,
+          result: "REJECT",
+          message: "User not authenticated",
+          scanned_at: new Date().toISOString(),
+        });
+        setShowScanResultModal(true);
+        return;
       }
 
       // Determine result (for now, always admit if valid)
       const result: "ADMIT" | "REJECT" = "ADMIT";
       const admitCount = invitationDataTyped.group_size;
 
-      if (!currentUser) {
-        setLastScan({
-          guest_name: invitationDataTyped.guest_name,
-          guest_phone: invitationDataTyped.guest_phone,
-          group_size: invitationDataTyped.group_size,
-          admit_count: admitCount,
-          result: "REJECT",
-          message: "User not authenticated",
-          scanned_at: new Date().toISOString(),
-        });
-        return;
-      }
-
-      // Create scan log
+      // Create scan log (but don't save yet - wait for OK button)
       const scanLog: OfflineScanLog = {
         id: crypto.randomUUID(),
         invitation_id: invitationDataTyped.id,
@@ -196,73 +198,22 @@ export default function ScanPage() {
         group_size: invitationDataTyped.group_size,
       };
 
-      if (isOnline) {
-        // Try to save online
-        try {
-          const { error: scanError } = await supabase
-            .from("scan_logs")
-            .insert({
-              invitation_id: invitationDataTyped.id,
-              usher_id: currentUser.id,
-              scanned_at: scanLog.scanned_at,
-              admit_count: admitCount,
-              result,
-              mode: "ONLINE",
-              synced: true,
-            });
+      // Store pending scan log
+      setPendingScanLog(scanLog);
 
-          if (scanError) throw scanError;
-
-          // Update invitation status
-          await supabase
-            .from("invitations")
-            .update({
-              status: "USED",
-              checked_in_count: admitCount,
-            })
-            .eq("id", invitationDataTyped.id);
-
-          scanLog.synced = true;
-          setLastScan({
-            guest_name: invitationDataTyped.guest_name,
-            guest_phone: invitationDataTyped.guest_phone,
-            group_size: invitationDataTyped.group_size,
-            admit_count: admitCount,
-            result: "ADMIT",
-            message: `Admitted (${admitCount} guest${admitCount > 1 ? "s" : ""})`,
-            scanned_at: scanLog.scanned_at,
-          });
-        } catch (error) {
-          console.error("Error saving scan online:", error);
-          // Fall back to offline storage
-          await saveOfflineScan(scanLog);
-          setLastScan({
-            guest_name: invitationDataTyped.guest_name,
-            guest_phone: invitationDataTyped.guest_phone,
-            group_size: invitationDataTyped.group_size,
-            admit_count: admitCount,
-            result: "ADMIT",
-            message: "Saved offline (will sync when online).",
-            scanned_at: scanLog.scanned_at,
-          });
-        }
-      } else {
-        // Save offline
-        await saveOfflineScan(scanLog);
-        setLastScan({
-          guest_name: invitationDataTyped.guest_name,
-          guest_phone: invitationDataTyped.guest_phone,
-          group_size: invitationDataTyped.group_size,
-          admit_count: admitCount,
-          result: "ADMIT",
-          message: "Saved offline (will sync when online).",
-          scanned_at: scanLog.scanned_at,
-        });
-      }
-
-      // Reload history
-      await loadScanHistory();
-      setShowScanner(false);
+      // Show guest details in modal
+      setLastScan({
+        guest_name: invitationDataTyped.guest_name,
+        guest_phone: invitationDataTyped.guest_phone || null,
+        group_size: invitationDataTyped.group_size,
+        admit_count: admitCount,
+        result,
+        message: invitationDataTyped.status === "USED" 
+          ? `This invitation was already used. Admit ${admitCount} guest${admitCount > 1 ? "s" : ""} again?`
+          : `Admit ${admitCount} guest${admitCount > 1 ? "s" : ""}?`,
+        scanned_at: new Date().toISOString(),
+      });
+      setShowScanResultModal(true);
     } catch (error) {
       console.error("Scan error:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to process scan";
@@ -275,6 +226,60 @@ export default function ScanPage() {
         message: errorMessage,
         scanned_at: new Date().toISOString(),
       });
+      setShowScanResultModal(true);
+    }
+  }
+
+  async function handleConfirmScan() {
+    if (!pendingScanLog || !lastScan) return;
+
+    setShowScanResultModal(false);
+
+    try {
+      if (isOnline) {
+        // Try to save online
+        try {
+          const { error: scanError } = await supabase
+            .from("scan_logs")
+            .insert({
+              invitation_id: pendingScanLog.invitation_id,
+              usher_id: pendingScanLog.usher_id,
+              scanned_at: pendingScanLog.scanned_at,
+              admit_count: pendingScanLog.admit_count,
+              result: pendingScanLog.result,
+              mode: "ONLINE",
+              synced: true,
+            });
+
+          if (scanError) throw scanError;
+
+          // Update invitation status
+          await supabase
+            .from("invitations")
+            .update({
+              status: "USED",
+              checked_in_count: pendingScanLog.admit_count || 0,
+            })
+            .eq("id", pendingScanLog.invitation_id);
+
+          pendingScanLog.synced = true;
+        } catch (error) {
+          console.error("Error saving scan online:", error);
+          // Fall back to offline storage
+          await saveOfflineScan(pendingScanLog);
+        }
+      } else {
+        // Save offline
+        await saveOfflineScan(pendingScanLog);
+      }
+
+      // Reload history
+      await loadScanHistory();
+      setPendingScanLog(null);
+      setLastScan(null);
+    } catch (error) {
+      console.error("Error confirming scan:", error);
+      alert("Failed to save scan. Please try again.");
     }
   }
 
@@ -517,6 +522,77 @@ export default function ScanPage() {
           onScanSuccess={handleScanSuccess}
           onClose={() => setShowScanner(false)}
         />
+      )}
+
+      {/* Scan Result Modal */}
+      {showScanResultModal && lastScan && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md p-6 bg-white dark:bg-zinc-900">
+            <div className="text-center mb-6">
+              {lastScan.result === "ADMIT" ? (
+                <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
+              ) : (
+                <XCircle className="text-red-500 mx-auto mb-4" size={64} />
+              )}
+              <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+                {lastScan.result === "ADMIT" ? "Valid QR Code" : "Invalid QR Code"}
+              </h2>
+            </div>
+
+            {lastScan.result === "ADMIT" ? (
+              <div className="space-y-4 mb-6">
+                <div className="text-center">
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Guest Name</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                    {lastScan.guest_name}
+                  </p>
+                </div>
+                {lastScan.guest_phone && (
+                  <div className="text-center">
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Phone Number</p>
+                    <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                      {lastScan.guest_phone}
+                    </p>
+                  </div>
+                )}
+                <div className="text-center">
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Group Size</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                    {lastScan.group_size} guest{lastScan.group_size !== 1 ? "s" : ""}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-6">
+                <p className="text-center text-red-600 dark:text-red-400">
+                  {lastScan.message}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  setShowScanResultModal(false);
+                  setLastScan(null);
+                  setPendingScanLog(null);
+                }}
+                variant="outline"
+                className="flex-1"
+              >
+                {lastScan.result === "REJECT" ? "Close" : "Cancel"}
+              </Button>
+              {lastScan.result === "ADMIT" && (
+                <Button
+                  onClick={handleConfirmScan}
+                  className="flex-1 bg-black dark:bg-white text-white dark:text-black"
+                >
+                  OK
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );

@@ -46,11 +46,8 @@ export default function QRScanner({
           },
           (errorMessage) => {
             // Error callback (not a fatal error, just no QR found)
-            if (errorMessage !== "NotFoundException") {
-              setError(errorMessage);
-              setLastResult("error");
-              onScanError?.(errorMessage);
-            }
+            // Don't show error immediately - only show when QR is actually scanned and invalid
+            // This prevents showing "Invalid QR Code" when scanner is just starting
           }
         );
 
