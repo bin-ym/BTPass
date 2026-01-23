@@ -155,10 +155,12 @@ export default function InvitationsPage() {
 
       for (const batch of batches) {
         const invitationsToInsert = batch.map((row) => {
-          const tempId = crypto.randomUUID();
-          const qrToken = generateQRToken(tempId, row.name);
+          // Generate the invitation UUID ourselves so QR contains the real invitation id
+          const invitationId = crypto.randomUUID();
+          const qrToken = generateQRToken(invitationId, row.name);
 
           return {
+            id: invitationId,
             guest_name: row.name,
             guest_phone: row.phone || null,
             group_size: row.groupSize || 1,
@@ -193,10 +195,12 @@ export default function InvitationsPage() {
     setIsProcessing(true);
 
     try {
-      const tempId = crypto.randomUUID();
-      const qrToken = generateQRToken(tempId, newInvitation.guest_name);
+      // Generate the invitation UUID ourselves so QR contains the real invitation id
+      const invitationId = crypto.randomUUID();
+      const qrToken = generateQRToken(invitationId, newInvitation.guest_name);
 
       const { error } = await supabase.from("invitations").insert({
+        id: invitationId,
         guest_name: newInvitation.guest_name,
         guest_phone: newInvitation.guest_phone || null,
         group_size: newInvitation.group_size,

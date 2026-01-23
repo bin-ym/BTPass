@@ -34,6 +34,15 @@ export default function ScanPage() {
   const [scanHistory, setScanHistory] = useState<OfflineScanLog[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastScan, setLastScan] = useState<{
+    guest_name: string;
+    guest_phone: string | null;
+    group_size: number;
+    admit_count: number;
+    result: "ADMIT" | "REJECT";
+    message: string;
+    scanned_at: string;
+  } | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -106,7 +115,15 @@ export default function ScanPage() {
       const invitationData = decryptInvitationData(decodedText);
 
       if (!invitationData) {
-        alert("Invalid QR code. Please scan a valid invitation QR code.");
+        setLastScan({
+          guest_name: "Unknown",
+          guest_phone: null,
+          group_size: 0,
+          admit_count: 0,
+          result: "REJECT",
+          message: "Invalid QR code. Please scan a valid invitation QR code.",
+          scanned_at: new Date().toISOString(),
+        });
         return;
       }
 
@@ -118,7 +135,15 @@ export default function ScanPage() {
         .single();
 
       if (invError || !invitation) {
-        alert("Invitation not found in database.");
+        setLastScan({
+          guest_name: invitationData.name || "Unknown",
+          guest_phone: null,
+          group_size: 0,
+          admit_count: 0,
+          result: "REJECT",
+          message: "Invitation not found in database.",
+          scanned_at: new Date().toISOString(),
+        });
         return;
       }
 
@@ -138,7 +163,15 @@ export default function ScanPage() {
       const admitCount = invitationDataTyped.group_size;
 
       if (!currentUser) {
-        alert("User not authenticated");
+        setLastScan({
+          guest_name: invitationDataTyped.guest_name,
+          guest_phone: invitationDataTyped.guest_phone,
+          group_size: invitationDataTyped.group_size,
+          admit_count: admitCount,
+          result: "REJECT",
+          message: "User not authenticated",
+          scanned_at: new Date().toISOString(),
+        });
         return;
       }
 
@@ -184,17 +217,41 @@ export default function ScanPage() {
             .eq("id", invitationDataTyped.id);
 
           scanLog.synced = true;
-          alert(`✅ Admitted: ${invitationDataTyped.guest_name} (${admitCount} guest${admitCount > 1 ? "s" : ""})`);
+          setLastScan({
+            guest_name: invitationDataTyped.guest_name,
+            guest_phone: invitationDataTyped.guest_phone,
+            group_size: invitationDataTyped.group_size,
+            admit_count: admitCount,
+            result: "ADMIT",
+            message: `Admitted (${admitCount} guest${admitCount > 1 ? "s" : ""})`,
+            scanned_at: scanLog.scanned_at,
+          });
         } catch (error) {
           console.error("Error saving scan online:", error);
           // Fall back to offline storage
           await saveOfflineScan(scanLog);
-          alert(`⚠️ Saved offline: ${invitationDataTyped.guest_name}. Will sync when online.`);
+          setLastScan({
+            guest_name: invitationDataTyped.guest_name,
+            guest_phone: invitationDataTyped.guest_phone,
+            group_size: invitationDataTyped.group_size,
+            admit_count: admitCount,
+            result: "ADMIT",
+            message: "Saved offline (will sync when online).",
+            scanned_at: scanLog.scanned_at,
+          });
         }
       } else {
         // Save offline
         await saveOfflineScan(scanLog);
-        alert(`📱 Saved offline: ${invitationDataTyped.guest_name}. Will sync when online.`);
+        setLastScan({
+          guest_name: invitationDataTyped.guest_name,
+          guest_phone: invitationDataTyped.guest_phone,
+          group_size: invitationDataTyped.group_size,
+          admit_count: admitCount,
+          result: "ADMIT",
+          message: "Saved offline (will sync when online).",
+          scanned_at: scanLog.scanned_at,
+        });
       }
 
       // Reload history
@@ -203,7 +260,15 @@ export default function ScanPage() {
     } catch (error) {
       console.error("Scan error:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to process scan";
-      alert(errorMessage);
+      setLastScan({
+        guest_name: "Unknown",
+        guest_phone: null,
+        group_size: 0,
+        admit_count: 0,
+        result: "REJECT",
+        message: errorMessage,
+        scanned_at: new Date().toISOString(),
+      });
     }
   }
 
@@ -337,6 +402,47 @@ export default function ScanPage() {
             </p>
           </Card>
         </div>
+
+        {/* Last Scan Details */}
+        {lastScan && (
+          <Card className="p-4 mb-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  {lastScan.result === "ADMIT" ? (
+                    <CheckCircle className="text-green-500" size={18} />
+                  ) : (
+                    <XCircle className="text-red-500" size={18} />
+                  )}
+                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                    {lastScan.guest_name}
+                  </h2>
+                </div>
+                <div className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                  {lastScan.guest_phone || "No phone"} • Group:{" "}
+                  {lastScan.group_size} • Admit: {lastScan.admit_count}
+                </div>
+                <div className="mt-3 text-sm">
+                  <span
+                    className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                      lastScan.result === "ADMIT"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {lastScan.result}
+                  </span>
+                  <span className="ml-2 text-zinc-700 dark:text-zinc-300">
+                    {lastScan.message}
+                  </span>
+                </div>
+              </div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                {format(new Date(lastScan.scanned_at), "MMM dd, HH:mm:ss")}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Scan History */}
         <Card className="p-4">

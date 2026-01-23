@@ -13,8 +13,10 @@ export function decryptInvitationData(token: string): {
   timestamp: number;
 } | null {
   try {
-    // Restore URL-safe characters
-    const base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+    // Restore URL-safe characters + base64 padding
+    let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = base64.length % 4;
+    if (pad) base64 += "=".repeat(4 - pad);
 
     const decrypted = CryptoJS.AES.decrypt(base64, ENCRYPTION_KEY);
     const decryptedString = decrypted.toString(CryptoJS.enc.Utf8);

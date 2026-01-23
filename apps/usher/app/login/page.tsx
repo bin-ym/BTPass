@@ -60,7 +60,7 @@ export default function LoginPage() {
       if (authError) throw authError;
 
       // Successful login
-      router.push("/");
+      router.push("/scan");
     } catch (err: any) {
       console.error("Login error:", err);
       setError(err.message || "An error occurred during login");
