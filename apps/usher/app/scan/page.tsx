@@ -22,6 +22,7 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  LogOut,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { User, Invitation } from "@/lib/types";
@@ -43,6 +44,11 @@ export default function ScanPage() {
     message: string;
     scanned_at: string;
   } | null>(null);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
 
   useEffect(() => {
     checkAuth();
@@ -347,15 +353,25 @@ export default function ScanPage() {
               {currentUser?.name || "Usher"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {isOnline ? (
-              <Wifi className="text-green-500" size={20} />
-            ) : (
-              <WifiOff className="text-yellow-500" size={20} />
-            )}
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">
-              {isOnline ? "Online" : "Offline"}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {isOnline ? (
+                <Wifi className="text-green-500" size={20} />
+              ) : (
+                <WifiOff className="text-yellow-500" size={20} />
+              )}
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                {isOnline ? "Online" : "Offline"}
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:opacity-90 transition text-sm"
+              title="Sign out"
+            >
+              <LogOut size={16} />
+              Logout
+            </button>
           </div>
         </div>
 
