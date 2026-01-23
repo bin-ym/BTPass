@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BTPass Icon Generator</title>
+  <style>
+    body { font-family: Arial; padding: 20px; max-width: 600px; margin: 0 auto; }
+    button { padding: 15px 30px; margin: 10px; font-size: 16px; cursor: pointer; background: #000; color: #fff; border: none; border-radius: 5px; }
+    button:hover { background: #333; }
+    .preview { margin: 20px 0; text-align: center; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+  </style>
+</head>
+<body>
+  <h1>BTPass PWA Icon Generator</h1>
+  <p>Click the buttons below to generate and download the icons. Then place them in the <code>public</code> folder.</p>
+  
+  <div class="preview">
+    <canvas id="canvas192" width="192" height="192"></canvas>
+    <canvas id="canvas512" width="512" height="512"></canvas>
+  </div>
+
+  <div>
+    <button onclick="generateIcon(192)">Generate & Download 192x192 Icon</button>
+    <button onclick="generateIcon(512)">Generate & Download 512x512 Icon</button>
+    <button onclick="generateBoth()">Generate Both Icons</button>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Black background
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, size, size);
+      
+      // White text "BT"
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold ' + Math.floor(size * 0.4) + 'px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('BT', size / 2, size / 2);
+    }
+
+    function generateIcon(size) {
+      const canvas = document.getElementById('canvas' + size);
+      drawIcon(canvas, size);
+      
+      canvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'icon-' + size + '.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert('✓ Icon ' + size + 'x' + size + ' downloaded!\n\nPlace it in: apps/usher/public/icon-' + size + '.png');
+      }, 'image/png');
+    }
+
+    function generateBoth() {
+      generateIcon(192);
+      setTimeout(() => generateIcon(512), 500);
+    }
+
+    // Draw preview on load
+    window.onload = function() {
+      drawIcon(document.getElementById('canvas192'), 192);
+      drawIcon(document.getElementById('canvas512'), 512);
+    };
+  </script>
+</body>
+</html>
