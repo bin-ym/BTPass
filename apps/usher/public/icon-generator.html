@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BTPass Icon Generator</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+  <h1>BTPass PWA Icon Generator</h1>
+  <p>Click the buttons below to generate and download the icons:</p>
+  
+  <div style="margin: 20px 0;">
+    <button onclick="generateIcon(192)" style="padding: 10px 20px; margin: 5px; cursor: pointer;">Generate 192x192 Icon</button>
+    <button onclick="generateIcon(512)" style="padding: 10px 20px; margin: 5px; cursor: pointer;">Generate 512x512 Icon</button>
+  </div>
+
+  <canvas id="canvas" style="border: 1px solid #ccc; display: none;"></canvas>
+
+  <script>
+    function generateIcon(size) {
+      const canvas = document.getElementById('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      
+      // Black background
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, size, size);
+      
+      // White text "BT"
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold ' + Math.floor(size * 0.4) + 'px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('BT', size / 2, size / 2);
+      
+      // Download
+      canvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'icon-' + size + '.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert('Icon ' + size + 'x' + size + ' downloaded! Place it in the public folder.');
+      }, 'image/png');
+    }
+  </script>
+</body>
+</html>

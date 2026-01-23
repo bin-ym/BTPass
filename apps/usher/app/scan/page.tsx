@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { decryptInvitationData } from "@/lib/qr-utils";
@@ -230,8 +230,13 @@ export default function ScanPage() {
     }
   }
 
-  async function handleConfirmScan() {
-    if (!pendingScanLog || !lastScan) return;
+  const handleConfirmScan = useCallback(async () => {
+    if (!pendingScanLog || !lastScan) {
+      console.log("No pending scan log or last scan");
+      return;
+    }
+
+    console.log("handleConfirmScan called", { pendingScanLog, lastScan });
 
     try {
       if (isOnline) {
@@ -278,17 +283,19 @@ export default function ScanPage() {
       alert("Failed to save scan. Please try again.");
     } finally {
       // Always reset states and close modal
+      console.log("Closing modal and resetting states");
       setShowScanResultModal(false);
       setPendingScanLog(null);
       setLastScan(null);
     }
-  }
+  }, [pendingScanLog, lastScan, isOnline]);
 
-  function handleCloseScanResultModal() {
+  const handleCloseScanResultModal = useCallback(() => {
+    console.log("handleCloseScanResultModal called");
     setShowScanResultModal(false);
     setPendingScanLog(null);
     setLastScan(null);
-  }
+  }, []);
 
   async function syncOfflineScans() {
     if (!isOnline || isSyncing) return;
@@ -593,29 +600,21 @@ export default function ScanPage() {
               </div>
             )}
 
-            <div className="flex gap-3">
+            <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log("Close button clicked");
-                  handleCloseScanResultModal();
-                }}
-                className="flex-1 px-4 py-2 border-2 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-lg transition-colors dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900/50"
+                onClick={handleCloseScanResultModal}
+                className="flex-1 px-4 py-2 border-2 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-lg transition-colors dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900/50 cursor-pointer"
+                style={{ pointerEvents: "auto" }}
               >
                 {lastScan.result === "REJECT" ? "Close" : "Cancel"}
               </button>
               {lastScan.result === "ADMIT" && (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log("OK button clicked");
-                    handleConfirmScan();
-                  }}
-                  className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
+                  onClick={handleConfirmScan}
+                  className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity cursor-pointer"
+                  style={{ pointerEvents: "auto" }}
                 >
                   OK
                 </button>
