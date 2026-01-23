@@ -600,21 +600,29 @@ export default function ScanPage() {
               </div>
             )}
 
-            <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex gap-3">
               <button
                 type="button"
-                onClick={handleCloseScanResultModal}
-                className="flex-1 px-4 py-2 border-2 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-lg transition-colors dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900/50 cursor-pointer"
-                style={{ pointerEvents: "auto" }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log("Close/Cancel clicked");
+                  handleCloseScanResultModal();
+                }}
+                className="flex-1 px-4 py-2 border-2 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-lg transition-colors dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900/50 cursor-pointer z-50 relative"
               >
                 {lastScan.result === "REJECT" ? "Close" : "Cancel"}
               </button>
               {lastScan.result === "ADMIT" && (
                 <button
                   type="button"
-                  onClick={handleConfirmScan}
-                  className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity cursor-pointer"
-                  style={{ pointerEvents: "auto" }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("OK clicked, calling handleConfirmScan");
+                    await handleConfirmScan();
+                  }}
+                  className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity cursor-pointer z-50 relative"
                 >
                   OK
                 </button>
