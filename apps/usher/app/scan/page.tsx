@@ -547,7 +547,10 @@ export default function ScanPage() {
             }
           }}
         >
-          <Card className="w-full max-w-md p-6 bg-white dark:bg-zinc-900 relative z-50">
+          <div 
+            className="w-full max-w-md p-6 bg-white dark:bg-zinc-900 rounded-lg shadow-lg relative z-50"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="text-center mb-6">
               {lastScan.result === "ADMIT" ? (
                 <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
@@ -591,33 +594,34 @@ export default function ScanPage() {
             )}
 
             <div className="flex gap-3">
-              <Button
+              <button
                 type="button"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  console.log("Close button clicked");
                   handleCloseScanResultModal();
                 }}
-                variant="outline"
-                className="flex-1"
+                className="flex-1 px-4 py-2 border-2 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-lg transition-colors dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900/50"
               >
                 {lastScan.result === "REJECT" ? "Close" : "Cancel"}
-              </Button>
+              </button>
               {lastScan.result === "ADMIT" && (
-                <Button
+                <button
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    console.log("OK button clicked");
                     handleConfirmScan();
                   }}
-                  className="flex-1 bg-black dark:bg-white text-white dark:text-black"
+                  className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
                 >
                   OK
-                </Button>
+                </button>
               )}
             </div>
-          </Card>
+          </div>
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Table, Column } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
 import { Card } from "@/components/ui/Card";
-import { Upload, Download, Search, Plus, FileSpreadsheet } from "lucide-react";
+import { Upload, Download, Search, Plus, FileSpreadsheet, Share2, Mail, MessageCircle, Instagram } from "lucide-react";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { generateQRToken, generateQRCode } from "@/lib/qr-utils";
@@ -29,6 +29,8 @@ export default function InvitationsPage() {
     guest_phone: "",
     group_size: 1,
   });
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedInvitation, setSelectedInvitation] = useState<Invitation | null>(null);
 
   useEffect(() => {
     fetchInvitations();
@@ -236,6 +238,88 @@ export default function InvitationsPage() {
     }
   }
 
+  async function handleShareQR(invitation: Invitation) {
+    setSelectedInvitation(invitation);
+    setShareModalOpen(true);
+  }
+
+  async function shareToTelegram(invitation: Invitation) {
+    try {
+      const qrDataURL = await generateQRCode(invitation.qr_token);
+      
+      // Convert data URL to blob
+      const response = await fetch(qrDataURL);
+      const blob = await response.blob();
+      const file = new File([blob], `qr-${invitation.guest_name}.png`, { type: "image/png" });
+      
+      // Create share data
+      if (navigator.share && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `QR Code for ${invitation.guest_name}`,
+          text: `Invitation QR code for ${invitation.guest_name}`,
+          files: [file],
+        });
+      } else {
+        // Fallback: Open Telegram with text
+        const text = encodeURIComponent(`QR Code for ${invitation.guest_name}`);
+        window.open(`https://t.me/share/url?url=${qrDataURL}&text=${text}`, "_blank");
+      }
+      setShareModalOpen(false);
+    } catch (error) {
+      console.error("Error sharing to Telegram:", error);
+      alert("Failed to share to Telegram");
+    }
+  }
+
+  async function shareToInstagram(invitation: Invitation) {
+    try {
+      const qrDataURL = await generateQRCode(invitation.qr_token);
+      
+      // Instagram doesn't support direct sharing via URL, so download the image
+      // User can then upload it manually to Instagram
+      const link = document.createElement("a");
+      link.href = qrDataURL;
+      link.download = `qr-${invitation.guest_name.replace(/\s+/g, "-")}.png`;
+      link.click();
+      
+      alert("QR code downloaded! You can now upload it to Instagram Stories or Posts.");
+      setShareModalOpen(false);
+    } catch (error) {
+      console.error("Error sharing to Instagram:", error);
+      alert("Failed to generate QR code for Instagram");
+    }
+  }
+
+  async function shareToEmail(invitation: Invitation) {
+    try {
+      const qrDataURL = await generateQRCode(invitation.qr_token);
+      
+      // Create mailto link with subject and body
+      const subject = encodeURIComponent(`QR Code Invitation for ${invitation.guest_name}`);
+      const body = encodeURIComponent(
+        `Hello,\n\nPlease find attached the QR code invitation for ${invitation.guest_name}.\n\nGroup Size: ${invitation.group_size}\n\nBest regards`
+      );
+      
+      // For email, we'll use mailto with instructions
+      // Note: Direct file attachment via mailto is limited, so we'll provide download link
+      const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
+      window.location.href = mailtoLink;
+      
+      // Also download the file so user can attach it manually
+      setTimeout(() => {
+        const link = document.createElement("a");
+        link.href = qrDataURL;
+        link.download = `qr-${invitation.guest_name.replace(/\s+/g, "-")}.png`;
+        link.click();
+      }, 500);
+      
+      setShareModalOpen(false);
+    } catch (error) {
+      console.error("Error sharing to Email:", error);
+      alert("Failed to share via email");
+    }
+  }
+
   const filteredInvitations = invitations.filter(
     (inv) =>
       inv.guest_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -277,14 +361,24 @@ export default function InvitationsPage() {
       key: "actions",
       label: "QR Code",
       render: (_, invitation) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => handleDownloadQR(invitation)}
-        >
-          <Download size={14} className="mr-1" />
-          Download
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleDownloadQR(invitation)}
+          >
+            <Download size={14} className="mr-1" />
+            Download
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleShareQR(invitation)}
+          >
+            <Share2 size={14} className="mr-1" />
+            Share
+          </Button>
+        </div>
       ),
     },
   ];
@@ -587,6 +681,50 @@ export default function InvitationsPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Share Modal */}
+      {shareModalOpen && selectedInvitation && (
+        <Modal
+          isOpen={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setSelectedInvitation(null);
+          }}
+          title="Share QR Code"
+        >
+          <div className="space-y-3">
+            <p className="text-gray-600 mb-4">
+              Share QR code for <strong>{selectedInvitation.guest_name}</strong>
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => shareToTelegram(selectedInvitation)}
+                variant="outline"
+                className="w-full justify-start"
+              >
+                <MessageCircle size={18} className="mr-2" />
+                Share to Telegram
+              </Button>
+              <Button
+                onClick={() => shareToInstagram(selectedInvitation)}
+                variant="outline"
+                className="w-full justify-start"
+              >
+                <Instagram size={18} className="mr-2" />
+                Share to Instagram
+              </Button>
+              <Button
+                onClick={() => shareToEmail(selectedInvitation)}
+                variant="outline"
+                className="w-full justify-start"
+              >
+                <Mail size={18} className="mr-2" />
+                Share via Email
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
