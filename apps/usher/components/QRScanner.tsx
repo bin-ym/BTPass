@@ -19,7 +19,7 @@ export default function QRScanner({
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<"success" | "error" | null>(
-    null
+    null,
   );
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function QRScanner({
             // Error callback (not a fatal error, just no QR found)
             // Don't show error immediately - only show when QR is actually scanned and invalid
             // This prevents showing "Invalid QR Code" when scanner is just starting
-          }
+          },
         );
 
         setIsScanning(true);
@@ -69,9 +69,11 @@ export default function QRScanner({
   }, []);
 
   const stopScanning = async () => {
-    if (scannerRef.current && isScanning) {
+    if (scannerRef.current) {
       try {
-        await scannerRef.current.stop();
+        if (isScanning) {
+          await scannerRef.current.stop();
+        }
         await scannerRef.current.clear();
       } catch (err) {
         console.error("Error stopping scanner:", err);

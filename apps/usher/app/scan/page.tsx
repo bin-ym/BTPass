@@ -45,7 +45,9 @@ export default function ScanPage() {
     scanned_at: string;
   } | null>(null);
   const [showScanResultModal, setShowScanResultModal] = useState(false);
-  const [pendingScanLog, setPendingScanLog] = useState<OfflineScanLog | null>(null);
+  const [pendingScanLog, setPendingScanLog] = useState<OfflineScanLog | null>(
+    null,
+  );
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -108,9 +110,12 @@ export default function ScanPage() {
 
   async function loadScanHistory() {
     const history = await getAllOfflineScans();
-    setScanHistory(history.sort((a, b) => 
-      new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime()
-    ));
+    setScanHistory(
+      history.sort(
+        (a, b) =>
+          new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime(),
+      ),
+    );
   }
 
   function checkOnlineStatus() {
@@ -208,15 +213,17 @@ export default function ScanPage() {
         group_size: invitationDataTyped.group_size,
         admit_count: admitCount,
         result,
-        message: invitationDataTyped.status === "USED" 
-          ? `This invitation was already used. Admit ${admitCount} guest${admitCount > 1 ? "s" : ""} again?`
-          : `Admit ${admitCount} guest${admitCount > 1 ? "s" : ""}?`,
+        message:
+          invitationDataTyped.status === "USED"
+            ? `This invitation was already used. Admit ${admitCount} guest${admitCount > 1 ? "s" : ""} again?`
+            : `Admit ${admitCount} guest${admitCount > 1 ? "s" : ""}?`,
         scanned_at: new Date().toISOString(),
       });
       setShowScanResultModal(true);
     } catch (error) {
       console.error("Scan error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to process scan";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to process scan";
       setLastScan({
         guest_name: "Unknown",
         guest_phone: null,
@@ -242,17 +249,15 @@ export default function ScanPage() {
       if (isOnline) {
         // Try to save online
         try {
-          const { error: scanError } = await supabase
-            .from("scan_logs")
-            .insert({
-              invitation_id: pendingScanLog.invitation_id,
-              usher_id: pendingScanLog.usher_id,
-              scanned_at: pendingScanLog.scanned_at,
-              admit_count: pendingScanLog.admit_count,
-              result: pendingScanLog.result,
-              mode: "ONLINE",
-              synced: true,
-            });
+          const { error: scanError } = await supabase.from("scan_logs").insert({
+            invitation_id: pendingScanLog.invitation_id,
+            usher_id: pendingScanLog.usher_id,
+            scanned_at: pendingScanLog.scanned_at,
+            admit_count: pendingScanLog.admit_count,
+            result: pendingScanLog.result,
+            mode: "ONLINE",
+            synced: true,
+          });
 
           if (scanError) throw scanError;
 
@@ -545,8 +550,8 @@ export default function ScanPage() {
 
       {/* Scan Result Modal */}
       {showScanResultModal && lastScan && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+        <div
+          className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
           onClick={(e) => {
             // Close modal when clicking backdrop
             if (e.target === e.currentTarget) {
@@ -554,41 +559,53 @@ export default function ScanPage() {
             }
           }}
         >
-          <div 
+          <div
             className="w-full max-w-md p-6 bg-white dark:bg-zinc-900 rounded-lg shadow-lg relative z-50"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-center mb-6">
               {lastScan.result === "ADMIT" ? (
-                <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
+                <CheckCircle
+                  className="text-green-500 mx-auto mb-4"
+                  size={64}
+                />
               ) : (
                 <XCircle className="text-red-500 mx-auto mb-4" size={64} />
               )}
               <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
-                {lastScan.result === "ADMIT" ? "Valid QR Code" : "Invalid QR Code"}
+                {lastScan.result === "ADMIT"
+                  ? "Valid QR Code"
+                  : "Invalid QR Code"}
               </h2>
             </div>
 
             {lastScan.result === "ADMIT" ? (
               <div className="space-y-4 mb-6">
                 <div className="text-center">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Guest Name</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">
+                    Guest Name
+                  </p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                     {lastScan.guest_name}
                   </p>
                 </div>
                 {lastScan.guest_phone && (
                   <div className="text-center">
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Phone Number</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">
+                      Phone Number
+                    </p>
                     <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                       {lastScan.guest_phone}
                     </p>
                   </div>
                 )}
                 <div className="text-center">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Group Size</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">
+                    Group Size
+                  </p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                    {lastScan.group_size} guest{lastScan.group_size !== 1 ? "s" : ""}
+                    {lastScan.group_size} guest
+                    {lastScan.group_size !== 1 ? "s" : ""}
                   </p>
                 </div>
               </div>
