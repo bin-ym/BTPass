@@ -32,6 +32,7 @@ export default function ScanPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showScanner, setShowScanner] = useState(false);
+  const [forceStopScanner, setForceStopScanner] = useState(false);
   const [scanHistory, setScanHistory] = useState<OfflineScanLog[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -124,7 +125,8 @@ export default function ScanPage() {
 
   async function handleScanSuccess(decodedText: string) {
     try {
-      // Close scanner first
+      // HARD stop scanner FIRST to avoid scanner overlays capturing clicks.
+      setForceStopScanner(true);
       setShowScanner(false);
 
       // Decrypt QR token
@@ -421,6 +423,25 @@ export default function ScanPage() {
               Sync
             </Button>
           )}
+          {/* Debug Button */}
+          <Button
+            onClick={() => {
+              setLastScan({
+                guest_name: "Test Guest",
+                guest_phone: "123-456-7890",
+                group_size: 2,
+                admit_count: 2,
+                result: "ADMIT",
+                message: "Test Admission",
+                scanned_at: new Date().toISOString(),
+              });
+              setShowScanResultModal(true);
+            }}
+            variant="outline"
+            className="bg-red-100 text-red-900 border-red-200"
+          >
+            Debug Modal
+          </Button>
         </div>
 
         {/* Stats */}
@@ -538,8 +559,10 @@ export default function ScanPage() {
       {/* QR Scanner Modal */}
       {showScanner && !showScanResultModal && (
         <QRScanner
+          forceStop={forceStopScanner}
           onScanSuccess={handleScanSuccess}
           onClose={() => {
+            setForceStopScanner(true);
             setShowScanner(false);
             // Reset any pending states when closing scanner
             setPendingScanLog(null);

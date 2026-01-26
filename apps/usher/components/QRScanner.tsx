@@ -8,12 +8,14 @@ interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
   onScanError?: (error: string) => void;
   onClose?: () => void;
+  forceStop?: boolean;
 }
 
 export default function QRScanner({
   onScanSuccess,
   onScanError,
   onClose,
+  forceStop,
 }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -21,6 +23,7 @@ export default function QRScanner({
   const [lastResult, setLastResult] = useState<"success" | "error" | null>(
     null,
   );
+  const stoppingRef = useRef(false);
 
   useEffect(() => {
     const startScanning = async () => {
@@ -35,14 +38,14 @@ export default function QRScanner({
             qrbox: { width: 250, height: 250 },
             aspectRatio: 1.0,
           },
-          (decodedText) => {
+          async (decodedText) => {
             // Success callback
+            if (stoppingRef.current) return;
+            stoppingRef.current = true;
             setLastResult("success");
+            // HARD stop scanner first to avoid overlays intercepting clicks on the result modal.
+            await stopScanning();
             onScanSuccess(decodedText);
-            // Stop scanning after successful scan
-            setTimeout(() => {
-              stopScanning();
-            }, 500);
           },
           (errorMessage) => {
             // Error callback (not a fatal error, just no QR found)
@@ -68,9 +71,18 @@ export default function QRScanner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!forceStop) return;
+    stoppingRef.current = true;
+    stopScanning();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceStop]);
+
   const stopScanning = async () => {
+    if (stoppingRef.current && !scannerRef.current) return;
     if (scannerRef.current) {
       try {
+        // html5-qrcode sets its own internal scanning state; we guard with our state too.
         if (isScanning) {
           await scannerRef.current.stop();
         }
@@ -79,10 +91,12 @@ export default function QRScanner({
         console.error("Error stopping scanner:", err);
       }
       setIsScanning(false);
+      scannerRef.current = null;
     }
   };
 
   const handleClose = () => {
+    stoppingRef.current = true;
     stopScanning();
     onClose?.();
   };
