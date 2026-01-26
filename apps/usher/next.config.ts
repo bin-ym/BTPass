@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone", // Required for Docker
+  // output: "standalone", // Required for Docker
+  output: "export", // Required for Capacitor
+  images: {
+    unoptimized: true, // Required for static export
+  },
   /* config options here */
 };
 
