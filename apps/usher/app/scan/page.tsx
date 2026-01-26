@@ -297,11 +297,13 @@ export default function ScanPage() {
     }
   }, [pendingScanLog, lastScan, isOnline]);
 
-  const handleCloseScanResultModal = useCallback(() => {
+  const handleCloseScanResultModal = useCallback(async () => {
     console.log("handleCloseScanResultModal called");
     setShowScanResultModal(false);
     setPendingScanLog(null);
     setLastScan(null);
+    // Reload history in case user dismissed without confirming
+    await loadScanHistory();
   }, []);
 
   async function syncOfflineScans() {
@@ -404,7 +406,10 @@ export default function ScanPage() {
         {/* Action buttons */}
         <div className="flex gap-3 mb-6">
           <Button
-            onClick={() => setShowScanner(true)}
+            onClick={() => {
+              setForceStopScanner(false);
+              setShowScanner(true);
+            }}
             className="flex-1 bg-black dark:bg-white text-white dark:text-black"
           >
             <ScanLine size={20} className="mr-2" />

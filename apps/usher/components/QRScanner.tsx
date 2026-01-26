@@ -28,6 +28,9 @@ export default function QRScanner({
   useEffect(() => {
     const startScanning = async () => {
       try {
+        // Reset stopping flag to allow scanning
+        stoppingRef.current = false;
+
         const scanner = new Html5Qrcode("qr-reader");
         scannerRef.current = scanner;
 
