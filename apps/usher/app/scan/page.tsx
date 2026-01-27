@@ -23,6 +23,8 @@ import {
   XCircle,
   RefreshCw,
   LogOut,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { User, Invitation } from "@/lib/types";
@@ -49,6 +51,7 @@ export default function ScanPage() {
   const [pendingScanLog, setPendingScanLog] = useState<OfflineScanLog | null>(
     null,
   );
+  const [admitCountInput, setAdmitCountInput] = useState<number>(1);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -110,9 +113,66 @@ export default function ScanPage() {
   }
 
   async function loadScanHistory() {
-    const history = await getAllOfflineScans();
+    const currentIsOnline =
+      typeof navigator !== "undefined" ? navigator.onLine : true;
+
+    let combinedHistory: OfflineScanLog[] = [];
+
+    // Always get local unsynced scans first
+    const allOffline = await getAllOfflineScans();
+    const unsynced = allOffline.filter((s) => !s.synced);
+
+    if (currentIsOnline) {
+      try {
+        const { data, error } = await supabase
+          .from("scan_logs")
+          .select(
+            `
+            *,
+            invitation:invitations(id, guest_name, guest_phone, group_size)
+          `,
+          )
+          .order("scanned_at", { ascending: false });
+
+        if (error) throw error;
+
+        if (data) {
+          const serverScans = data.map((log: any) => ({
+            id: log.id,
+            invitation_id: log.invitation_id,
+            usher_id: log.usher_id,
+            scanned_at: log.scanned_at,
+            admit_count: log.admit_count,
+            result: log.result,
+            mode: log.mode,
+            synced: true,
+            guest_name: log.invitation?.guest_name || "Unknown",
+            guest_phone: log.invitation?.guest_phone,
+            group_size: log.invitation?.group_size || 0,
+          })) as OfflineScanLog[];
+
+          combinedHistory = [...unsynced, ...serverScans];
+        }
+      } catch (e) {
+        console.error("Error fetching online history:", e);
+        combinedHistory = allOffline; // Fallback
+      }
+    } else {
+      combinedHistory = allOffline;
+    }
+
+    // Deduplicate by ID
+    const seen = new Set();
+    const unique = [];
+    for (const item of combinedHistory) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        unique.push(item);
+      }
+    }
+
     setScanHistory(
-      history.sort(
+      unique.sort(
         (a, b) =>
           new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime(),
       ),
@@ -188,7 +248,11 @@ export default function ScanPage() {
 
       // Determine result (for now, always admit if valid)
       const result: "ADMIT" | "REJECT" = "ADMIT";
-      const admitCount = invitationDataTyped.group_size;
+      const groupSize = invitationDataTyped.group_size;
+
+      // Default to admitting the full group (or remaining count if partially checked in?? currently specific req is just ask count)
+      // Assuming we default to full group size
+      setAdmitCountInput(groupSize);
 
       // Create scan log (but don't save yet - wait for OK button)
       const scanLog: OfflineScanLog = {
@@ -196,7 +260,7 @@ export default function ScanPage() {
         invitation_id: invitationDataTyped.id,
         usher_id: currentUser.id,
         scanned_at: new Date().toISOString(),
-        admit_count: admitCount,
+        admit_count: groupSize, // This will be updated with local state on confirm
         result,
         mode: isOnline ? "ONLINE" : "OFFLINE",
         synced: false,
@@ -213,12 +277,12 @@ export default function ScanPage() {
         guest_name: invitationDataTyped.guest_name,
         guest_phone: invitationDataTyped.guest_phone || null,
         group_size: invitationDataTyped.group_size,
-        admit_count: admitCount,
+        admit_count: groupSize,
         result,
         message:
           invitationDataTyped.status === "USED"
-            ? `This invitation was already used. Admit ${admitCount} guest${admitCount > 1 ? "s" : ""} again?`
-            : `Admit ${admitCount} guest${admitCount > 1 ? "s" : ""}?`,
+            ? `This invitation was already used. Admit ${groupSize} guest${groupSize > 1 ? "s" : ""} again?`
+            : `Admit guests?`, // Simplified message as we show inputs
         scanned_at: new Date().toISOString(),
       });
       setShowScanResultModal(true);
@@ -245,18 +309,28 @@ export default function ScanPage() {
       return;
     }
 
-    console.log("handleConfirmScan called", { pendingScanLog, lastScan });
+    console.log("handleConfirmScan called", {
+      pendingScanLog,
+      lastScan,
+      admitCountInput,
+    });
+
+    // Update the pending log with the selected admit count
+    const finalScanLog = {
+      ...pendingScanLog,
+      admit_count: admitCountInput,
+    };
 
     try {
       if (isOnline) {
         // Try to save online
         try {
           const { error: scanError } = await supabase.from("scan_logs").insert({
-            invitation_id: pendingScanLog.invitation_id,
-            usher_id: pendingScanLog.usher_id,
-            scanned_at: pendingScanLog.scanned_at,
-            admit_count: pendingScanLog.admit_count,
-            result: pendingScanLog.result,
+            invitation_id: finalScanLog.invitation_id,
+            usher_id: finalScanLog.usher_id,
+            scanned_at: finalScanLog.scanned_at,
+            admit_count: finalScanLog.admit_count,
+            result: finalScanLog.result,
             mode: "ONLINE",
             synced: true,
           });
@@ -268,19 +342,25 @@ export default function ScanPage() {
             .from("invitations")
             .update({
               status: "USED",
-              checked_in_count: pendingScanLog.admit_count || 0,
+              checked_in_count: finalScanLog.admit_count || 0,
             })
-            .eq("id", pendingScanLog.invitation_id);
+            .eq("id", finalScanLog.invitation_id);
 
-          pendingScanLog.synced = true;
+          // Mark as synced
+          finalScanLog.synced = true;
+
+          // IMPORTANT: Also save to IndexedDB for local history display
+          await saveOfflineScan(finalScanLog);
         } catch (error) {
           console.error("Error saving scan online:", error);
           // Fall back to offline storage
-          await saveOfflineScan(pendingScanLog);
+          finalScanLog.synced = false;
+          await saveOfflineScan(finalScanLog);
         }
       } else {
         // Save offline
-        await saveOfflineScan(pendingScanLog);
+        finalScanLog.synced = false;
+        await saveOfflineScan(finalScanLog);
       }
 
       // Reload history
@@ -428,25 +508,6 @@ export default function ScanPage() {
               Sync
             </Button>
           )}
-          {/* Debug Button */}
-          <Button
-            onClick={() => {
-              setLastScan({
-                guest_name: "Test Guest",
-                guest_phone: "123-456-7890",
-                group_size: 2,
-                admit_count: 2,
-                result: "ADMIT",
-                message: "Test Admission",
-                scanned_at: new Date().toISOString(),
-              });
-              setShowScanResultModal(true);
-            }}
-            variant="outline"
-            className="bg-red-100 text-red-900 border-red-200"
-          >
-            Debug Modal
-          </Button>
         </div>
 
         {/* Stats */}
@@ -636,6 +697,52 @@ export default function ScanPage() {
                     {lastScan.group_size !== 1 ? "s" : ""}
                   </p>
                 </div>
+
+                {/* Admission Count Selector for Groups */}
+                {lastScan.group_size > 1 && (
+                  <div className="bg-zinc-100 dark:bg-zinc-800 p-4 rounded-lg">
+                    <p className="text-center text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-3">
+                      How many to admit?
+                    </p>
+                    <div className="flex items-center justify-center gap-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAdmitCountInput((prev) => Math.max(1, prev - 1));
+                        }}
+                        disabled={admitCountInput <= 1}
+                        className="p-2 rounded-full bg-white dark:bg-zinc-700 shadow-sm border border-zinc-200 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-zinc-600 transition-colors"
+                      >
+                        <Minus
+                          size={20}
+                          className="text-zinc-600 dark:text-zinc-300"
+                        />
+                      </button>
+
+                      <div className="text-2xl font-bold w-12 text-center text-zinc-900 dark:text-zinc-50">
+                        {admitCountInput}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAdmitCountInput((prev) =>
+                            Math.min(lastScan.group_size, prev + 1),
+                          );
+                        }}
+                        disabled={admitCountInput >= lastScan.group_size}
+                        className="p-2 rounded-full bg-white dark:bg-zinc-700 shadow-sm border border-zinc-200 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-zinc-600 transition-colors"
+                      >
+                        <Plus
+                          size={20}
+                          className="text-zinc-600 dark:text-zinc-300"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="mb-6">
