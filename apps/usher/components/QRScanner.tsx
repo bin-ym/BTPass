@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { ScanLine, X, CheckCircle, XCircle } from "lucide-react";
+import { Camera } from "@capacitor/camera";
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -28,6 +29,9 @@ export default function QRScanner({
   useEffect(() => {
     const startScanning = async () => {
       try {
+        // Request camera permissions first
+        await Camera.requestPermissions();
+
         // Reset stopping flag to allow scanning
         stoppingRef.current = false;
 
@@ -46,14 +50,12 @@ export default function QRScanner({
             if (stoppingRef.current) return;
             stoppingRef.current = true;
             setLastResult("success");
-            // HARD stop scanner first to avoid overlays intercepting clicks on the result modal.
+            // HARD stop scanner first to avoid scanner overlays capturing clicks.
             await stopScanning();
             onScanSuccess(decodedText);
           },
           (errorMessage) => {
             // Error callback (not a fatal error, just no QR found)
-            // Don't show error immediately - only show when QR is actually scanned and invalid
-            // This prevents showing "Invalid QR Code" when scanner is just starting
           },
         );
 
