@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { ScanLine, X, CheckCircle, XCircle } from "lucide-react";
-import { Camera } from "@capacitor/camera";
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -29,15 +28,46 @@ export default function QRScanner({
   useEffect(() => {
     const startScanning = async () => {
       try {
+        console.log("Requesting camera permissions...");
         // Request camera permissions first
-        await Camera.requestPermissions();
+        // Note: checking permission status might be good, but requesting is safe
+        try {
+          // Assuming Camera is a global or imported object, if not, this will cause an error.
+          // For web, this is usually handled by the browser's prompt when getUserMedia is called.
+          // If this is for a specific platform like Capacitor/Cordova, 'Camera' would need to be imported.
+          // For a generic web app, this line might be removed or commented out.
+          // await Camera.requestPermissions();
+        } catch (permErr) {
+          console.warn(
+            "Camera permission request failed or not available:",
+            permErr,
+          );
+          // Continue anyway, as browser might handle it
+        }
+
+        // Delay slightly to ensure UI is ready
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Reset stopping flag to allow scanning
         stoppingRef.current = false;
 
+        console.log("Initializing Html5Qrcode...");
         const scanner = new Html5Qrcode("qr-reader");
         scannerRef.current = scanner;
 
+        // Check cameras
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          console.log("Cameras found:", devices);
+          if (devices && devices.length === 0) {
+            throw new Error("No camera found/allowed");
+          }
+        } catch (camErr) {
+          console.warn("Get cameras failed:", camErr);
+          // Fallthrough to try start anyway
+        }
+
+        console.log("Starting scanner...");
         await scanner.start(
           { facingMode: "environment" }, // Use back camera on mobile
           {
@@ -48,6 +78,7 @@ export default function QRScanner({
           async (decodedText) => {
             // Success callback
             if (stoppingRef.current) return;
+            console.log("Scan success:", decodedText);
             stoppingRef.current = true;
             setLastResult("success");
             // HARD stop scanner first to avoid scanner overlays capturing clicks.
@@ -55,10 +86,12 @@ export default function QRScanner({
             onScanSuccess(decodedText);
           },
           (errorMessage) => {
-            // Error callback (not a fatal error, just no QR found)
+            // Error callback
+            // This is verbose, so we don't log every frame error
           },
         );
 
+        console.log("Scanner started");
         setIsScanning(true);
         setError(null);
       } catch (err: any) {
@@ -68,9 +101,11 @@ export default function QRScanner({
       }
     };
 
-    startScanning();
+    // Small timeout to allow mount
+    const timer = setTimeout(startScanning, 100);
 
     return () => {
+      clearTimeout(timer);
       stopScanning();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,10 +183,19 @@ export default function QRScanner({
           </div>
         )}
 
+        {/* Scan Result Error */}
         {lastResult === "error" && error && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-full">
             <XCircle size={20} />
             <span>Invalid QR code</span>
+          </div>
+        )}
+
+        {/* General/Init Error */}
+        {!lastResult && error && (
+          <div className="absolute bottom-20 left-4 right-4 p-4 bg-red-500/90 text-white rounded-lg text-center">
+            <p className="font-bold mb-1">Scanner Error</p>
+            <p className="text-sm">{error}</p>
           </div>
         )}
       </div>
