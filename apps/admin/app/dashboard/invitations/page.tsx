@@ -6,11 +6,22 @@ import { Button } from "@/components/ui/Button";
 import { Table, Column } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
 import { Card } from "@/components/ui/Card";
-import { Upload, Download, Search, Plus, FileSpreadsheet, Share2, Mail, MessageCircle, Instagram } from "lucide-react";
+import {
+  Upload,
+  Download,
+  Search,
+  Plus,
+  FileSpreadsheet,
+  Share2,
+  Mail,
+  MessageCircle,
+  Instagram,
+} from "lucide-react";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { generateQRToken, generateQRCode } from "@/lib/qr-utils";
 import type { Invitation, CSVRow } from "@/lib/types";
+import { useMemo } from "react";
 
 export default function InvitationsPage() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -30,11 +41,23 @@ export default function InvitationsPage() {
     group_size: 1,
   });
   const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [selectedInvitation, setSelectedInvitation] = useState<Invitation | null>(null);
+  const [selectedInvitation, setSelectedInvitation] =
+    useState<Invitation | null>(null);
+  const [shareQrDataUrl, setShareQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInvitations();
   }, []);
+  const filteredInvitations = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+
+    return invitations.filter(
+      (invitation) =>
+        invitation.guest_name.toLowerCase().includes(query) ||
+        (invitation.guest_phone &&
+          invitation.guest_phone.toLowerCase().includes(query)),
+    );
+  }, [invitations, searchQuery]);
 
   async function fetchInvitations() {
     try {
@@ -62,13 +85,15 @@ export default function InvitationsPage() {
       header: true,
       skipEmptyLines: true,
       complete: (results: Papa.ParseResult<Record<string, string>>) => {
-        const parsed: CSVRow[] = results.data.map((row: Record<string, string>) => ({
-          name: row.Name || row.name || "",
-          phone: row.Phone || row.phone || "",
-          groupSize: parseInt(
-            row["Group Size"] || row.group_size || row.groupSize || "1"
-          ),
-        }));
+        const parsed: CSVRow[] = results.data.map(
+          (row: Record<string, string>) => ({
+            name: row.Name || row.name || "",
+            phone: row.Phone || row.phone || "",
+            groupSize: parseInt(
+              row["Group Size"] || row.group_size || row.groupSize || "1",
+            ),
+          }),
+        );
         setPreviewData(parsed);
       },
       error: (error: Error) => {
@@ -89,42 +114,46 @@ export default function InvitationsPage() {
       // Convert Google Sheets URL to CSV export URL
       // Format: https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={GID}
       // CSV export: https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}
-      
+
       let csvUrl = googleSheetsUrl.trim();
-      
+
       // Extract sheet ID and GID from URL
       const sheetIdMatch = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (!sheetIdMatch) {
         throw new Error("Invalid Google Sheets URL format");
       }
-      
+
       const sheetId = sheetIdMatch[1];
       const gidMatch = csvUrl.match(/[#&]gid=(\d+)/);
       const gid = gidMatch ? gidMatch[1] : "0";
-      
+
       // Construct CSV export URL
       csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-      
+
       // Fetch CSV data
       const response = await fetch(csvUrl);
       if (!response.ok) {
-        throw new Error("Failed to fetch Google Sheets. Make sure the sheet is publicly accessible or shared with view permissions.");
+        throw new Error(
+          "Failed to fetch Google Sheets. Make sure the sheet is publicly accessible or shared with view permissions.",
+        );
       }
-      
+
       const csvText = await response.text();
-      
+
       // Parse CSV
       Papa.parse(csvText, {
         header: true,
         skipEmptyLines: true,
         complete: (results: Papa.ParseResult<Record<string, string>>) => {
-          const parsed: CSVRow[] = results.data.map((row: Record<string, string>) => ({
-            name: row.Name || row.name || "",
-            phone: row.Phone || row.phone || "",
-            groupSize: parseInt(
-              row["Group Size"] || row.group_size || row.groupSize || "1"
-            ),
-          }));
+          const parsed: CSVRow[] = results.data.map(
+            (row: Record<string, string>) => ({
+              name: row.Name || row.name || "",
+              phone: row.Phone || row.phone || "",
+              groupSize: parseInt(
+                row["Group Size"] || row.group_size || row.groupSize || "1",
+              ),
+            }),
+          );
           setPreviewData(parsed);
           setGoogleSheetsUrl("");
         },
@@ -135,7 +164,10 @@ export default function InvitationsPage() {
       });
     } catch (error) {
       console.error("Google Sheets import error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to import from Google Sheets";
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to import from Google Sheets";
       alert(errorMessage);
     } finally {
       setIsLoadingSheets(false);
@@ -185,7 +217,8 @@ export default function InvitationsPage() {
       alert(`Successfully imported ${previewData.length} invitations!`);
     } catch (error) {
       console.error("Error uploading invitations:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to upload invitations";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to upload invitations";
       alert(errorMessage);
     } finally {
       setIsProcessing(false);
@@ -217,7 +250,8 @@ export default function InvitationsPage() {
       setNewInvitation({ guest_name: "", guest_phone: "", group_size: 1 });
     } catch (error) {
       console.error("Error adding invitation:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to add invitation";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to add invitation";
       alert(errorMessage);
     } finally {
       setIsProcessing(false);
@@ -238,93 +272,156 @@ export default function InvitationsPage() {
     }
   }
 
+  // =====================
+  // SHARE HELPERS
+  // =====================
+  async function getQRAssets(invitation: Invitation) {
+    const qrDataURL = await generateQRCode(invitation.qr_token);
+
+    const response = await fetch(qrDataURL);
+    const blob = await response.blob();
+
+    const safeName = invitation.guest_name.replace(/\s+/g, "-");
+    const fileName = `qr-${safeName}.png`;
+
+    const file = new File([blob], fileName, { type: "image/png" });
+    const objectUrl = URL.createObjectURL(blob);
+
+    return { file, objectUrl, fileName };
+  }
+
+  // =====================
+  // OPEN SHARE MODAL
+  // =====================
   async function handleShareQR(invitation: Invitation) {
     setSelectedInvitation(invitation);
     setShareModalOpen(true);
+    try {
+      const qrDataURL = await generateQRCode(invitation.qr_token);
+      setShareQrDataUrl(qrDataURL);
+    } catch (error) {
+      console.error("Error generating QR for preview:", error);
+    }
   }
 
+  // =====================
+  // TELEGRAM SHARE
+  // =====================
   async function shareToTelegram(invitation: Invitation) {
     try {
-      const qrDataURL = await generateQRCode(invitation.qr_token);
-      
-      // Convert data URL to blob
-      const response = await fetch(qrDataURL);
-      const blob = await response.blob();
-      const file = new File([blob], `qr-${invitation.guest_name}.png`, { type: "image/png" });
-      
-      // Create share data
-      if (navigator.share && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: `QR Code for ${invitation.guest_name}`,
-          text: `Invitation QR code for ${invitation.guest_name}`,
-          files: [file],
-        });
-      } else {
-        // Fallback: Open Telegram with text
-        const text = encodeURIComponent(`QR Code for ${invitation.guest_name}`);
-        window.open(`https://t.me/share/url?url=${qrDataURL}&text=${text}`, "_blank");
-      }
+      const { objectUrl, fileName } = await getQRAssets(invitation);
+
+      const text = encodeURIComponent(
+        `Invitation QR for ${invitation.guest_name}\n\nPlease attach the downloaded QR code when sending.`,
+      );
+
+      // Open Telegram share link
+      window.open(`https://t.me/share/url?url=&text=${text}`, "_blank");
+
+      // Auto-download QR
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      link.click();
+
       setShareModalOpen(false);
     } catch (error) {
-      console.error("Error sharing to Telegram:", error);
-      alert("Failed to share to Telegram");
+      console.error("Telegram share error:", error);
+      alert("Failed to share QR code to Telegram");
     }
   }
 
+  // =====================
+  // INSTAGRAM SHARE
+  // =====================
   async function shareToInstagram(invitation: Invitation) {
     try {
-      const qrDataURL = await generateQRCode(invitation.qr_token);
-      
-      // Instagram doesn't support direct sharing via URL, so download the image
-      // User can then upload it manually to Instagram
+      const { objectUrl, fileName } = await getQRAssets(invitation);
+
+      // Open Instagram (since there's no direct web share URL for images)
+      window.open("https://www.instagram.com/", "_blank");
+
+      // Auto-download QR
       const link = document.createElement("a");
-      link.href = qrDataURL;
-      link.download = `qr-${invitation.guest_name.replace(/\s+/g, "-")}.png`;
+      link.href = objectUrl;
+      link.download = fileName;
       link.click();
-      
-      alert("QR code downloaded! You can now upload it to Instagram Stories or Posts.");
+
+      alert(
+        "QR downloaded! You can now upload it to your Instagram Story or Feed.",
+      );
       setShareModalOpen(false);
     } catch (error) {
-      console.error("Error sharing to Instagram:", error);
-      alert("Failed to generate QR code for Instagram");
+      console.error("Instagram share error:", error);
+      alert("Failed to prepare QR code for Instagram");
     }
   }
 
+  // =====================
+  // EMAIL SHARE
+  // =====================
   async function shareToEmail(invitation: Invitation) {
     try {
-      const qrDataURL = await generateQRCode(invitation.qr_token);
-      
-      // Create mailto link with subject and body
-      const subject = encodeURIComponent(`QR Code Invitation for ${invitation.guest_name}`);
-      const body = encodeURIComponent(
-        `Hello,\n\nPlease find attached the QR code invitation for ${invitation.guest_name}.\n\nGroup Size: ${invitation.group_size}\n\nBest regards`
+      const { objectUrl, fileName } = await getQRAssets(invitation);
+
+      const subject = encodeURIComponent(
+        `Invitation QR for ${invitation.guest_name}`,
       );
-      
-      // For email, we'll use mailto with instructions
-      // Note: Direct file attachment via mailto is limited, so we'll provide download link
-      const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
-      window.location.href = mailtoLink;
-      
-      // Also download the file so user can attach it manually
-      setTimeout(() => {
-        const link = document.createElement("a");
-        link.href = qrDataURL;
-        link.download = `qr-${invitation.guest_name.replace(/\s+/g, "-")}.png`;
-        link.click();
-      }, 500);
-      
+
+      const body = encodeURIComponent(
+        `Hello,
+
+Please find the QR code invitation details below.
+
+Guest: ${invitation.guest_name}
+Group Size: ${invitation.group_size}
+
+The QR image has been downloaded automatically.
+Please attach it to this email before sending.
+
+Best regards`,
+      );
+
+      window.location.href = `mailto:?subject=${subject}&body=${body}`;
+
+      // Auto-download QR for manual attachment
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      link.click();
+
       setShareModalOpen(false);
     } catch (error) {
-      console.error("Error sharing to Email:", error);
-      alert("Failed to share via email");
+      console.error("Email share error:", error);
+      alert("Failed to share QR code via email");
     }
   }
 
-  const filteredInvitations = invitations.filter(
-    (inv) =>
-      inv.guest_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.guest_phone?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // =====================
+  // WHATSAPP SHARE (RECOMMENDED)
+  // =====================
+  async function shareToWhatsApp(invitation: Invitation) {
+    try {
+      const { objectUrl, fileName } = await getQRAssets(invitation);
+
+      const text = encodeURIComponent(
+        `Invitation QR for ${invitation.guest_name}\n\nPlease attach the downloaded QR code when sending.`,
+      );
+
+      window.open(`https://wa.me/?text=${text}`, "_blank");
+
+      // Auto-download QR
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      link.click();
+
+      setShareModalOpen(false);
+    } catch (error) {
+      console.error("WhatsApp share error:", error);
+      alert("Failed to share QR code via WhatsApp");
+    }
+  }
 
   const columns: Column[] = [
     { key: "guest_name", label: "Guest Name" },
@@ -344,8 +441,8 @@ export default function InvitationsPage() {
             value === "ACTIVE"
               ? "bg-green-100 text-green-700"
               : value === "USED"
-              ? "bg-gray-100 text-gray-700"
-              : "bg-red-100 text-red-700"
+                ? "bg-gray-100 text-gray-700"
+                : "bg-red-100 text-red-700"
           }`}
         >
           {value}
@@ -689,39 +786,94 @@ export default function InvitationsPage() {
           onClose={() => {
             setShareModalOpen(false);
             setSelectedInvitation(null);
+            setShareQrDataUrl(null);
           }}
-          title="Share QR Code"
+          title="Share Invitation"
+          size="md"
         >
-          <div className="space-y-3">
-            <p className="text-gray-600 mb-4">
-              Share QR code for <strong>{selectedInvitation.guest_name}</strong>
-            </p>
-            <div className="flex flex-col gap-2">
+          <div className="space-y-6">
+            {/* Guest Info */}
+            <div className="text-center">
+              <h3 className="text-xl font-bold text-gray-900">
+                {selectedInvitation.guest_name}
+              </h3>
+              <p className="text-sm text-gray-500">
+                Group Size: {selectedInvitation.group_size} •{" "}
+                {selectedInvitation.guest_phone || "No phone"}
+              </p>
+            </div>
+
+            {/* QR Preview Card */}
+            <div className="flex justify-center">
+              <div className="bg-white p-4 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center gap-2 transform transition-transform hover:scale-105 duration-300">
+                {shareQrDataUrl ? (
+                  <img
+                    src={shareQrDataUrl}
+                    alt="QR Code Preview"
+                    className="w-48 h-48"
+                  />
+                ) : (
+                  <div className="w-48 h-48 bg-gray-50 animate-pulse rounded-lg flex items-center justify-center">
+                    <span className="text-xs text-gray-400">Generating...</span>
+                  </div>
+                )}
+                <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">
+                  Scan to Admit
+                </span>
+              </div>
+            </div>
+
+            {/* Share Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                onClick={() => shareToWhatsApp(selectedInvitation)}
+                className="bg-[#25D366] hover:bg-[#20ba5a] text-white border-none shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 py-3"
+              >
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <MessageCircle size={18} fill="white" />
+                </div>
+                WhatsApp
+              </Button>
               <Button
                 onClick={() => shareToTelegram(selectedInvitation)}
-                variant="outline"
-                className="w-full justify-start"
+                className="bg-[#0088cc] hover:bg-[#0077b5] text-white border-none shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 py-3"
               >
-                <MessageCircle size={18} className="mr-2" />
-                Share to Telegram
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <Share2 size={18} />
+                </div>
+                Telegram
               </Button>
               <Button
                 onClick={() => shareToInstagram(selectedInvitation)}
-                variant="outline"
-                className="w-full justify-start"
+                className="bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] hover:opacity-90 text-white border-none shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 py-3"
               >
-                <Instagram size={18} className="mr-2" />
-                Share to Instagram
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <Instagram size={18} />
+                </div>
+                Instagram
               </Button>
               <Button
                 onClick={() => shareToEmail(selectedInvitation)}
-                variant="outline"
-                className="w-full justify-start"
+                className="bg-gray-800 hover:bg-gray-900 text-white border-none shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 py-3"
               >
-                <Mail size={18} className="mr-2" />
-                Share via Email
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <Mail size={18} />
+                </div>
+                Email
+              </Button>
+              <Button
+                onClick={() => handleDownloadQR(selectedInvitation)}
+                variant="outline"
+                className="col-span-2 border-2 border-dashed border-gray-300 hover:border-gray-900 py-3 transition-colors flex items-center justify-center gap-2"
+              >
+                <Download size={18} />
+                Save to Device
               </Button>
             </div>
+
+            <p className="text-[10px] text-center text-gray-400 uppercase tracking-widest leading-relaxed">
+              BTPass Digital Invitation System
+            </p>
           </div>
         </Modal>
       )}

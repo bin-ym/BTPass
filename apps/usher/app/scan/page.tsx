@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { User, Invitation } from "@/lib/types";
+import { getOfflineSession, clearOfflineSession } from "@/lib/offline-auth";
 
 export default function ScanPage() {
   const router = useRouter();
@@ -54,6 +55,7 @@ export default function ScanPage() {
   const [admitCountInput, setAdmitCountInput] = useState<number>(1);
 
   async function handleLogout() {
+    await clearOfflineSession();
     await supabase.auth.signOut();
     router.replace("/login");
   }
@@ -86,6 +88,24 @@ export default function ScanPage() {
   }, []);
 
   async function checkAuth() {
+    // First, check for offline session
+    const offlineSession = await getOfflineSession();
+    if (offlineSession) {
+      // Use offline session
+      setCurrentUser({
+        id: offlineSession.userId,
+        name: offlineSession.userName,
+        email: offlineSession.userEmail,
+        phone: offlineSession.userPhone,
+        role: "USHER",
+        active: true,
+        created_at: "",
+      });
+      setIsAuthenticated(true);
+      return;
+    }
+
+    // If no offline session, check Supabase
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -95,13 +115,19 @@ export default function ScanPage() {
       return;
     }
 
-    // Get user details from users table
-    const { data: userData } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", session.user.id)
-      .eq("role", "USHER")
-      .single();
+    // Get user details from users table via API
+    const userResponse = await fetch("/api/auth/get-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.user.id }),
+    });
+
+    if (!userResponse.ok) {
+      router.replace("/login");
+      return;
+    }
+
+    const { user: userData } = await userResponse.json();
 
     if (!userData) {
       router.replace("/login");
@@ -246,13 +272,31 @@ export default function ScanPage() {
         return;
       }
 
-      // Determine result (for now, always admit if valid)
-      const result: "ADMIT" | "REJECT" = "ADMIT";
+      // Calculate already checked in and remaining
+      const alreadyCheckedIn = invitationDataTyped.checked_in_count || 0;
       const groupSize = invitationDataTyped.group_size;
+      const remaining = groupSize - alreadyCheckedIn;
 
-      // Default to admitting the full group (or remaining count if partially checked in?? currently specific req is just ask count)
-      // Assuming we default to full group size
-      setAdmitCountInput(groupSize);
+      // Validate if invitation can still be used
+      if (remaining <= 0 || invitationDataTyped.status === "USED") {
+        setLastScan({
+          guest_name: invitationDataTyped.guest_name,
+          guest_phone: invitationDataTyped.guest_phone || null,
+          group_size: invitationDataTyped.group_size,
+          admit_count: 0,
+          result: "REJECT",
+          message: `This invitation has been fully used (${alreadyCheckedIn}/${groupSize} guests already admitted).`,
+          scanned_at: new Date().toISOString(),
+        });
+        setShowScanResultModal(true);
+        return;
+      }
+
+      // Determine result
+      const result: "ADMIT" | "REJECT" = "ADMIT";
+
+      // Default to admitting 1 guest for single, or 1 for groups (user can adjust)
+      setAdmitCountInput(groupSize === 1 ? 1 : 1);
 
       // Create scan log (but don't save yet - wait for OK button)
       const scanLog: OfflineScanLog = {
@@ -260,14 +304,17 @@ export default function ScanPage() {
         invitation_id: invitationDataTyped.id,
         usher_id: currentUser.id,
         scanned_at: new Date().toISOString(),
-        admit_count: groupSize, // This will be updated with local state on confirm
+        admit_count: 1, // This will be updated with local state on confirm
         result,
         mode: isOnline ? "ONLINE" : "OFFLINE",
         synced: false,
         guest_name: invitationDataTyped.guest_name,
         guest_phone: invitationDataTyped.guest_phone || undefined,
         group_size: invitationDataTyped.group_size,
-      };
+        // Store current state for reference
+        already_checked_in: alreadyCheckedIn,
+        remaining: remaining,
+      } as any;
 
       // Store pending scan log
       setPendingScanLog(scanLog);
@@ -277,14 +324,17 @@ export default function ScanPage() {
         guest_name: invitationDataTyped.guest_name,
         guest_phone: invitationDataTyped.guest_phone || null,
         group_size: invitationDataTyped.group_size,
-        admit_count: groupSize,
+        admit_count: 1,
         result,
         message:
-          invitationDataTyped.status === "USED"
-            ? `This invitation was already used. Admit ${groupSize} guest${groupSize > 1 ? "s" : ""} again?`
-            : `Admit guests?`, // Simplified message as we show inputs
+          groupSize === 1
+            ? "Admit this guest?"
+            : `Remaining: ${remaining} / ${groupSize} guests`,
         scanned_at: new Date().toISOString(),
-      });
+        // Store for UI reference
+        already_checked_in: alreadyCheckedIn,
+        remaining: remaining,
+      } as any);
       setShowScanResultModal(true);
     } catch (error) {
       console.error("Scan error:", error);
@@ -325,6 +375,19 @@ export default function ScanPage() {
       if (isOnline) {
         // Try to save online
         try {
+          // First, fetch current invitation state
+          const { data: currentInvitation } = await supabase
+            .from("invitations")
+            .select("checked_in_count, group_size")
+            .eq("id", finalScanLog.invitation_id)
+            .single();
+
+          const currentCheckedIn = currentInvitation?.checked_in_count || 0;
+          const groupSize = currentInvitation?.group_size || 0;
+          const newCheckedInCount =
+            currentCheckedIn + (finalScanLog.admit_count || 0);
+          const newStatus = newCheckedInCount >= groupSize ? "USED" : "ACTIVE";
+
           const { error: scanError } = await supabase.from("scan_logs").insert({
             invitation_id: finalScanLog.invitation_id,
             usher_id: finalScanLog.usher_id,
@@ -341,8 +404,8 @@ export default function ScanPage() {
           await supabase
             .from("invitations")
             .update({
-              status: "USED",
-              checked_in_count: finalScanLog.admit_count || 0,
+              status: newStatus,
+              checked_in_count: newCheckedInCount,
             })
             .eq("id", finalScanLog.invitation_id);
 
@@ -375,7 +438,7 @@ export default function ScanPage() {
       setPendingScanLog(null);
       setLastScan(null);
     }
-  }, [pendingScanLog, lastScan, isOnline]);
+  }, [pendingScanLog, lastScan, isOnline, admitCountInput]);
 
   const handleCloseScanResultModal = useCallback(async () => {
     console.log("handleCloseScanResultModal called");
@@ -409,11 +472,25 @@ export default function ScanPage() {
 
           // Update invitation if needed
           if (scan.invitation_id) {
+            // Fetch current state
+            const { data: currentInvitation } = await supabase
+              .from("invitations")
+              .select("checked_in_count, group_size")
+              .eq("id", scan.invitation_id)
+              .single();
+
+            const currentCheckedIn = currentInvitation?.checked_in_count || 0;
+            const groupSize = currentInvitation?.group_size || 0;
+            const newCheckedInCount =
+              currentCheckedIn + (scan.admit_count || 0);
+            const newStatus =
+              newCheckedInCount >= groupSize ? "USED" : "ACTIVE";
+
             await supabase
               .from("invitations")
               .update({
-                status: "USED",
-                checked_in_count: scan.admit_count || 0,
+                status: newStatus,
+                checked_in_count: newCheckedInCount,
               })
               .eq("id", scan.invitation_id);
           }
@@ -728,11 +805,16 @@ export default function ScanPage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          const maxRemaining =
+                            (lastScan as any).remaining || lastScan.group_size;
                           setAdmitCountInput((prev) =>
-                            Math.min(lastScan.group_size, prev + 1),
+                            Math.min(maxRemaining, prev + 1),
                           );
                         }}
-                        disabled={admitCountInput >= lastScan.group_size}
+                        disabled={
+                          admitCountInput >=
+                          ((lastScan as any).remaining || lastScan.group_size)
+                        }
                         className="p-2 rounded-full bg-white dark:bg-zinc-700 shadow-sm border border-zinc-200 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-zinc-600 transition-colors"
                       >
                         <Plus

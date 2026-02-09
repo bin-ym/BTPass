@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Mail, Lock, LogIn, Loader2, AlertCircle } from "lucide-react";
+import { Mail, Lock, LogIn, Loader2, AlertCircle, WifiOff } from "lucide-react";
 import Image from "next/image";
+import {
+  storeOfflineUser,
+  validateOfflineCredentials,
+  createOfflineSession,
+} from "@/lib/offline-auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,6 +19,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Detect if input is email or phone
   function isEmail(input: string): boolean {
@@ -26,38 +44,83 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      // Try offline login first if offline
+      if (!isOnline) {
+        const offlineUser = await validateOfflineCredentials(
+          identifier,
+          password,
+        );
+        if (!offlineUser) {
+          throw new Error(
+            "Invalid credentials or no offline data available. Please connect to the internet to login.",
+          );
+        }
+
+        // Create offline session
+        await createOfflineSession(offlineUser);
+        router.push("/scan");
+        return;
+      }
+
+      // Online login
       let userEmail: string;
+      let userData: any;
 
       if (isEmail(identifier)) {
         // Direct email login
         userEmail = identifier;
       } else {
-        // Phone-based login: Find user by phone, then sign in with email
-        const { data: users, error: userError } = await supabase
-          .from("users")
-          .select("email, phone")
-          .eq("phone", identifier)
-          .eq("role", "USHER")
-          .eq("active", true)
-          .limit(1);
+        // Phone-based login: Find user by phone via API, then sign in with email
+        const response = await fetch("/api/auth/lookup-by-phone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: identifier }),
+        });
 
-        if (userError || !users || users.length === 0) {
-          throw new Error("No usher found with this phone number or email");
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.error || "No usher found with this phone number or email",
+          );
         }
 
-        userEmail = users[0].email;
+        const { user } = await response.json();
+        userData = user;
+        userEmail = user.email;
         if (!userEmail) {
           throw new Error("No email associated with this phone number");
         }
       }
 
       // Sign in with email and password
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: userEmail,
-        password,
-      });
+      const { data, error: authError } = await supabase.auth.signInWithPassword(
+        {
+          email: userEmail,
+          password,
+        },
+      );
 
       if (authError) throw authError;
+
+      // Get full user data if not already fetched
+      if (!userData) {
+        const userResponse = await fetch("/api/auth/get-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: data.user.id }),
+        });
+
+        if (userResponse.ok) {
+          const { user } = await userResponse.json();
+          userData = user;
+        }
+      }
+
+      // Store credentials offline for future offline access
+      if (userData) {
+        await storeOfflineUser(userData, password);
+        await createOfflineSession(userData);
+      }
 
       // Successful login
       router.push("/scan");
@@ -86,6 +149,12 @@ export default function LoginPage() {
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
             Sign in to manage guest entries
           </p>
+          {!isOnline && (
+            <div className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/30 rounded-full text-yellow-700 dark:text-yellow-400 text-sm">
+              <WifiOff size={14} />
+              <span>Offline Mode</span>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
